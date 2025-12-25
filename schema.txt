@@ -1,0 +1,47 @@
+          ┌──────────────┐
+          │   SESSION    │
+          │──────────────│
+          │ session_id   │
+          │ state        │
+          │ created_at   │
+          │ updated_at   │
+          └──────┬───────┘
+                 │
+       contains  │
+      many msgs  │
+                 ▼
+          ┌──────────────┐
+          │   MESSAGE    │
+          │──────────────│
+          │ message_id   │
+          │ role         │
+          │ content      │
+          │ timestamp    │
+          └──────────────┘
+
+                 │
+        summarized into
+                 │
+                 ▼
+          ┌────────────────────┐
+          │  SESSION SUMMARY   │
+          │────────────────────│
+          │ emotions           │
+          │ themes             │
+          │ intensity          │
+          │ trigger            │
+          │ thought_loop       │
+          │ behavior           │
+          └─────────┬──────────┘
+                    │
+           tracked over time
+                    │
+                    ▼
+          ┌────────────────────┐
+          │   PROGRESS LOG     │
+          │────────────────────│
+          │ intensity          │
+          │ themes             │
+          │ recorded_at        │
+          └────────────────────┘
+
