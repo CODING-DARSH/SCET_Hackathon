@@ -6,7 +6,6 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 //=====This is SMTP SERVER CODE WHICH IS NOT WORK NOW SO ITS RUN ON MOCK OTP ========
-// const axios = require("axios");
 
 async function sendOtpEmail(email, otp) {
   try {
