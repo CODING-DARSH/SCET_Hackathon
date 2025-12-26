@@ -1,46 +1,38 @@
-const axios = require("axios");
+require("dotenv").config();
+const nodemailer = require("nodemailer");
 const { v4: uuidv4 } = require("uuid");
 const { pool } = require("../db/db");
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
-//=====This is SMTP SERVER CODE WHICH IS NOT WORK NOW SO ITS RUN ON MOCK OTP ========
 
-async function sendOtpEmail(email, otp) {
-  try {
-    console.log("📩 Sending OTP to:", email);
+const transporter = nodemailer.createTransport({
+  host: process.env.MAIL_HOST,
+  port: process.env.MAIL_PORT,
+  secure: false,
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+  },
+});
 
-    const response = await axios.post(
-      "https://api.brevo.com/v3/smtp/email",
-      {
-        sender: {
-          name: "SCET Hackathon",
-          email: process.env.BREVO_SENDER_EMAIL
-        },
-        to: [{ email }],
-        subject: "Your OTP Code",
-        htmlContent: `<h2>Your OTP is ${otp}</h2>`
-      },
-      {
-        headers: {
-          "api-key": process.env.BREVO_API_KEY,
-          "content-type": "application/json"
-        }
-      }
-    );
+async function sendOtpEmail(email, otp, purpose) {
+  await transporter.sendMail({
+    from: `"Ai-Therapist" <${process.env.MAIL_USER}>`,
+    to: email,
+    subject: "Ai-Therapist OTP Verification",
+    text: `Your OTP for ${purpose} is ${otp}. Valid for 5 minutes.`,
+    html: `
+      <h2>Ai-Therapist</h2>
+      <p>Your OTP for <b>${purpose}</b> is:</p>
+      <h1>${otp}</h1>
+      <p>This OTP is valid for 5 minutes.</p>
+    `,
+  });
 
-    console.log("✅ Brevo response:", response.data);
-  } catch (error) {
-    console.error("❌ Brevo error:", error.response?.data || error.message);
-  }
+  console.log("✅ OTP email sent to:", email);
 }
-module.exports = { sendOtpEmail };
-// async function sendOtpEmail(email, otp) {
-//   console.log("🔐 MOCK OTP for", email, ":", otp);
-// }
-
-
 
 async function createAndSendOtp(user_id, email, purpose) {
   const otp = generateOTP();
@@ -53,8 +45,7 @@ async function createAndSendOtp(user_id, email, purpose) {
     [uuidv4(), user_id, otp, purpose, expiresAt]
   );
 
-  await sendOtpEmail(email, otp);
+  await sendOtpEmail(email, otp, purpose);
 }
 
 module.exports = { createAndSendOtp };
-
