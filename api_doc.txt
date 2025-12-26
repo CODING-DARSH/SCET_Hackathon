@@ -1,0 +1,141 @@
+1️⃣ REGISTER USER
+
+POST /auth/register
+
+Request
+
+{
+  "full_name": "string",
+  "email": "string",
+  "mobile_no": "string",
+  "password": "string"
+}
+
+
+Response
+
+{
+  "message": "OTP sent to email"
+}
+
+2️⃣ VERIFY REGISTER OTP
+
+POST /auth/verify-register-otp
+
+Request
+
+{
+  "email": "string",
+  "otp": "string"
+}
+
+
+Response
+
+{
+  "message": "Registration successful"
+}
+
+3️⃣ LOGIN WITH PASSWORD
+
+POST /auth/login-password
+
+Request
+
+{
+  "email": "string",
+  "password": "string"
+}
+
+
+Response
+
+{
+  "user_id": "uuid",
+  "message": "Login successful"
+}
+
+4️⃣ LOGIN WITH OTP (REQUEST OTP)
+
+POST /auth/login-otp
+
+Request
+
+{
+  "email": "string"
+}
+
+
+Response
+
+{
+  "message": "OTP sent to email"
+}
+
+5️⃣ VERIFY LOGIN OTP
+
+POST /auth/verify-login-otp
+
+Request
+
+{
+  "email": "string",
+  "otp": "string"
+}
+
+
+Response
+
+{
+  "user_id": "uuid",
+  "message": "Login successful"
+}
+
+💬 CHAT API (PLACEHOLDER FOR NOW)
+6️⃣ CHAT MESSAGE
+
+POST /chat
+
+Request
+
+{
+  "session_id": "optional",
+  "user_id": "optional",
+  "message": "string"
+}
+
+
+Response
+
+{
+  "reply": "string",
+  "session_id": "string"
+}
+
+🧠 SESSION API (IF / WHEN CREATED)
+7️⃣ CREATE SESSION
+
+POST /session/create
+
+Request
+
+{
+  "user_id": "uuid"
+}
+
+
+Response
+
+{
+  "session_id": "uuid"
+}
+
+❌ ERROR RESPONSE (COMMON FOR ALL APIs)
+{
+  "message": "Something went wrong. Please try again."
+}
+
+🧾 ONE-LINE SUMMARY (FOR TEAM)
+Auth APIs handle user login & OTP.
+Chat API handles messages using session_id.
+Backend returns JSON only.
