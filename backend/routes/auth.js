@@ -65,32 +65,52 @@ router.post("/verify-register-otp", async (req, res) => {
 
 /* ============ LOGIN WITH PASSWORD ============ */
 router.post("/login-password", async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  const user = await pool.query(
-    "SELECT * FROM users WHERE email=$1",
-    [email]
-  );
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password are required"
+      });
+    }
 
-  if (user.rowCount === 0) {
-    return res.json({ message: "User not found" });
+    const result = await pool.query(
+      "SELECT * FROM users WHERE email = $1",
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    const user = result.rows[0];
+
+    if (!user.password) {
+      return res.status(500).json({
+        message: "User password not set"
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Invalid password"
+      });
+    }
+
+    res.json({
+      message: "Login successful",
+      user_id: user.id
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
-
-  const match = await bcrypt.compare(
-    password,
-    user.rows[0].password_hash
-  );
-
-  if (!match) {
-    return res.json({ message: "Invalid password" });
-  }
-
-  res.json({
-    user_id: user.rows[0].user_id,
-    message: "Login successful"
-  });
 });
-
 /* ============ LOGIN WITH OTP ============ */
 router.post("/login-otp", async (req, res) => {
   const { email } = req.body;
