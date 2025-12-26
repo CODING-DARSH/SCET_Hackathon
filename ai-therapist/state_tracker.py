@@ -1,3 +1,4 @@
+
 class StateTracker:
     def __init__(self):
         self.last_user_input = None
@@ -42,3 +43,5 @@ class StateTracker:
             f"- emotional load: {self.emotional_load}\n"
             f"- self-frustration: {self.self_frustration}"
         )
+        
+
