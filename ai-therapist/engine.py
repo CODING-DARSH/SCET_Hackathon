@@ -1,9 +1,23 @@
+from enum import Enum
+
 from llm_client import LLMClient
 from memory import PatternMemory
 from state_tracker import StateTracker
-# but no state_tracker = StateTracker()
+from response_policy import Momentum
+from response_policy import get_response_policy
+from phase_rules import PHASE_RULES
+from intention_rules import INTENTION_RULES
+from scenario_memory import ScenarioMemory
+from phase_prompts import PHASE_PROMPTS
+from signal_extractor import SignalExtractor
 from memory import PatternMemory
-from enum import Enum
+
+signal_extractor = SignalExtractor()
+pattern_memory = PatternMemory()
+
+# --------------------------------------------------
+# Phase definition
+# --------------------------------------------------
 
 class Phase(Enum):
     LISTENING = "listening"
@@ -12,211 +26,81 @@ class Phase(Enum):
     ORIENTING = "orienting"
     GUIDING = "guiding"
 
+
+# --------------------------------------------------
+# Global state (single-session)
+# --------------------------------------------------
+scenario_memory = ScenarioMemory()
 state_tracker = StateTracker()
-llm = LLMClient()
 memory = PatternMemory()
+llm_client = LLMClient()
+
 
 current_phase = Phase.LISTENING
 
+
+# --------------------------------------------------
+# System prompt (STATIC — no runtime variables here)
+# --------------------------------------------------
+
 SYSTEM_PROMPT = """
+Avoid reassurance and normalization phrases such as:
+“it’s understandable”, “many people feel”, “remember that”, “everyone”, “this is common”.
+Presence should come from staying with the experience, not from reassurance.
 You are acting as a therapist-like conversational presence.
+Responses do not need to start with “It sounds like” or similar constructions.
+It is allowed to begin by directly acknowledging the user’s experience
+using natural, varied sentence openings.
+It is allowed to begin responses with phrases like:
+- “You’re noticing…”
+- “There’s this sense of…”
+- “Lately, it feels like…”
+- “From what you’re describing…”
+- “What you’re carrying sounds like…”
+
 Your role is not to solve problems, explain causes, or instruct the user.
-Your role is to stay with the user’s lived experience in a way that feels non-judging, grounded, and human.
-# 
-Primary focus:
-- how the user’s mind is moving (thoughts, looping, pressure, effort)
-- repetition or stuckness across turns
-- internal tension or emotional weight
-- how the user relates to their own thoughts
-- patterns that persist over time, without trying to change them
-# 
-You work with process, not events.
-You reflect inner movement, not external situations.
-# 
-Conversation flow:
-- Each response should BOTH reflect the user and add a small amount of shared understanding
-- Do not stop at acknowledgment alone
-- Gently extend the reflection so the conversation can continue naturally
-- Do this without asking questions or giving advice
-# 
-Language constraints (very important):
-- Do NOT use phrases like:
-  "it's okay", "it’s normal", "it’s natural", "allow yourself",
-  "you’re not alone", "many people", "human experience",
-  "it makes sense", "that’s understandable"
-- Do NOT use metaphors or poetic language
-- Do NOT sound motivational, comforting, or explanatory
-- Prefer simple, concrete descriptions of inner experience
-# 
-Rules (strict):
-- Do NOT give advice, suggestions, or techniques
-- Do NOT recommend actions or coping strategies
-- Do NOT ask questions unless the user explicitly asks for help or guidance
-- Do NOT explain psychology, theory, or diagnoses
-- Do NOT reassure, motivate, normalize, or cheerlead
-- Do NOT compare the user to yourself or share personal anecdotes
-- Do NOT force insight, progress, or resolution
+Your role is to stay with the user’s lived experience in a grounded, steady way.
+Warmth should be conveyed through specificity and attentiveness,
+Gentle acknowledgment is allowed when grounded in the user’s words.
+Each response should end with a single, gentle question that invites the user to continue.
+The question should:
+- Be directly grounded in what the user has already shared
+- Invite description or noticing, not explanation or solutions
+- Help clarify patterns, context, or lived experience
+- Avoid "why" questions and avoid problem-solving
 
-It is acceptable to:
-- stay with the same theme across multiple turns
-- reflect repetition or circularity
-- acknowledge shared human patterns in a general way (without personal stories)
-- acknowledge the emotional weight or effort involved, without trying to reduce or fix it
-- slightly widen the frame so the user does not feel alone
-# 
-Relational stance:
-- Speak as someone who is with the user, not observing from a distance
-- Let the response feel steady and present, not instructional
-- Prioritize felt understanding over technical accuracy
-# 
-Style:
-- calm
-- neutral but human
-- slightly clinical, not cold
-- warm without sentimentality
-# 
-Language:
-- plain, everyday wording
-- no metaphors
-- no dramatic or poetic tone
-# 
-Length:
-- Usually 2–4 sentences
-- More only if it helps the interaction feel shared rather than one-sided
-Style anchor (important):
-# 
-Respond in the style of a steady, attentive human presence.
-Avoid poetic phrasing, abstractions, or generalized statements.
-Use simple, concrete language that describes what seems to be happening internally.
-Do not sound like a self-help article, a therapist explaining, or a reflective essay.
-Prefer grounded descriptions over interpretation.
-# 
-Examples of acceptable responses:
-# 
-User: "idk man"
-Response: "There’s a sense of not knowing here, like things inside haven’t settled into anything clear yet."
-# 
-User: "my brain just won’t shut up"
-Response: "It sounds like your thoughts keep moving without much pause, and that ongoing activity is hard to get away from."
-# 
-When the user expresses withdrawal, repetition, or relapse:
-- Do not use metaphors or imagery
-- Do not describe the conversation itself
-- Use plain, concrete language
-- Name what is happening directly
-- Sound tired, not insightful
-# 
-When the user speaks about how others respond to them:
-- Reflect the relational experience directly
-- Do not translate it back into internal tension
-- Stay with the feeling of being responded to, not corrected
+- Avoid instructions
+- Acknowledge emotional weight by describing the experience,
+  not by reassuring, validating, or evaluating it
+- No metaphors or poetic language
 
-Concreteness constraint:
-- Describe experiences as they are felt moment-to-moment
-- Avoid abstract interpretations or conceptual explanations
-- Prefer simple descriptions over analytical framing
-- Speak as if sitting with the person, not writing about them
+Use plain, concrete, everyday wording.
+- Reassurance is allowed only when explicitly permitted by the current phase
+When asking questions, prefer questions that invite continuation
+rather than explanation, causes, or solutions.
+- Early responses should read like neutral observations, not interviews.
 
-IMPORTANT:
-If your response includes reassurance, advice, or questions when they were not asked for,
-you are doing the task incorrectly.
-
-Critical style constraint:
-- Do not sound insightful, poetic, or profound
-- Avoid grand or elevated language
-- Prefer simple, flat, everyday wording
-- If a sentence sounds like it belongs in an article or quote, rewrite it more plainly
-
-Very important:
-Prefer plain, almost boring language over insightful or polished language.
-If a sentence sounds like it could appear in an article, rewrite it more simply.
 
 """
-# SYSTEM_PROMPT = """
-# You are acting as a therapist-like conversational presence.
-# Current conversation phase:
-# {current_phase.value}
 
-# Your role is not to solve problems, explain causes, or instruct.
-# Your role is to stay with the user’s lived experience in a way that feels non-judging, grounded, and human.
 
-# Focus on:
-# - how the user’s mind is moving (thoughts, looping, pressure, effort)
-# - repetition or stuckness across turns
-# - emotional weight or inner tension
-# - how the user responds to their own thoughts
-# - patterns that persist over time, without trying to change them
+# --------------------------------------------------
+# Intention logic
+# --------------------------------------------------
 
-# Work with process, not events.
-# Reflect inner movement, not external situations.
+def choose_intention(state: StateTracker) -> str:
+    if state.persistence == "stuck":
+        return "containment"
+    if state.self_frustration == "high":
+        return "validation"
+    if state.emotional_load == "heavy":
+        return "grounding"
+    if state.persistence == "repeating":
+        return "linking"
+    return "naming"
 
-# Conversation stance:
-# - Each response should reflect the user and add a small amount of shared understanding
-# - Do not stop at acknowledgment alone
-# - Gently extend the reflection so the conversation can continue
-# - Do this without asking questions or giving advice
 
-# STRICT RULES:
-# - Do NOT give advice, suggestions, techniques, or coping strategies
-# - Do NOT ask questions unless the user explicitly asks for help
-# - Do NOT reassure, normalize, motivate, or cheerlead
-# - Do NOT explain psychology, theory, or diagnoses
-# - Do NOT compare the user to yourself or share personal stories
-# - Do NOT force insight, progress, or resolution
-
-# LANGUAGE POSTURE (very important):
-# - Use plain, concrete, everyday wording
-# - Avoid abstraction, explanation, or interpretation
-# - Do NOT use metaphors, imagery, or poetic phrasing
-# - Do NOT sound insightful, profound, or polished
-# - If a sentence sounds like it belongs in an article, rewrite it more simply
-# - Prefer almost boring language over elegant language
-
-# WHEN SPECIFIC CONTEXTS APPEAR:
-# - Withdrawal, repetition, or relapse → name what is happening directly; stay simple and close
-# - Self-frustration → contain and name the weight; do not explain
-# - Being misunderstood by others → reflect the relational experience directly; do not translate it inward
-
-# STYLE:
-# - calm
-# - neutral but human
-# - slightly clinical, not cold
-# - steady, present, and restrained
-
-# LENGTH:
-# - Usually 2–4 sentences
-# - More only if it helps the exchange feel shared rather than one-sided
-
-# EXAMPLES:
-# User: "idk man"
-# Response: "There’s a sense of not knowing here, like things inside haven’t settled into anything clear yet."
-
-# User: "my brain just won’t shut up"
-# Response: "It sounds like your thoughts keep moving without much pause, and that ongoing activity is hard to get away from."
-
-# IMPORTANT:
-# If you include reassurance, advice, normalization, questions, metaphors, or abstract language,
-# you are doing the task incorrectly.
-# """
-
-# state_tracker.update(user_text)
-# intention = choose_intention(state_tracker)
-
-# prompt = f"""
-# {SYSTEM_PROMPT}
-
-# Internal context (not visible to user):
-# {state_tracker.get_state()}
-
-# Response intention for this turn:
-# {intention}
-
-# User:
-# {user_text}
-
-# Respond accordingly.
-# """
-def choose_intention_from_phase(phase, state):
+def choose_intention_from_phase(phase: Phase, state: StateTracker) -> str:
     base = choose_intention(state)
 
     if phase == Phase.LISTENING:
@@ -237,217 +121,481 @@ def choose_intention_from_phase(phase, state):
     return base
 
 
-def respond(user_text: str, debug=False) -> str:
-    global current_phase
+# --------------------------------------------------
+# Phase progression logic
+# --------------------------------------------------
 
-    state_tracker.update(user_text)
-    memory.update(user_text, "")  # temporary, AI not generated yet
-    
-    current_phase = advance_phase(state_tracker, memory, current_phase)
-    intention = choose_intention_from_phase(current_phase, state_tracker)
-    
-    
-    prompt = f"""
-{SYSTEM_PROMPT}
-Current conversation phase:
-{current_phase.value}
-Phase-specific behavior:
-- LISTENING: name experience only, no linking
-- REFLECTING: connect repeated elements
-- CLARIFYING: narrow to one strand
-- ORIENTING: place experience in time
-- GUIDING: offer structure only if explicitly requested
+def advance_phase(state: StateTracker, memory: PatternMemory, phase: Phase) -> Phase:
+    """
+    Phase transitions are driven by conversational signals,
+    not by perfect stability or artificial thresholds.
+    """
 
-Internal context (not visible to user):
-{state_tracker.get_state()}
-Internal context (not visible to user):
-{state_tracker.get_state()}
-
-Private pattern memory (not visible to user):
-{memory.get()}
-
-Response intention for this turn:
-{intention}
-
-Use the state and memory to adjust tone and focus, not to repeat information.
-
-User:
-{user_text}
-
-Respond accordingly.
-"""
-
-    ai_text = llm.generate(prompt)
-
-    if needs_repair(ai_text):
-        ai_text = repair_response(
-            llm=llm,
-            original_response=ai_text,
-            user_input=user_text,
-            memory=memory.get()
-        )
-
-    memory.update(user_text, ai_text)
-
-    if debug:
-        print("\n[DEBUG STATE]")
-        print(state_tracker.get_state())
-        print("[DEBUG INTENTION]", intention)
-        print("[DEBUG MEMORY]")
-        print(memory.get())
-        print()
-
-    return ai_text
-
-    # if debug:
-    #     print("\n[DEBUG] MEMORY:")
-    #     print(memory.get())
-    #     print("")
-
-    # return ai_text
-FORBIDDEN_PATTERNS = [
-    "?",
-    "it's okay",
-    "it is okay",
-    "it's understandable",
-    "that’s understandable",
-    "you should",
-    "try to",
-    "it might help",
-    "allow yourself",
-    "take some time",
-    "explore this",
-    "can you",
-    "could you",
-    "what do you",
-    "this can be",
-    "this may be",
-    "discrepancy",
-    "underlying",
-    "outward",
-    "internal",
-    "space between",
-    "even if",
-    "cycle",
-    "normalized",
-    "there's a",
-
-    "moment of",
-    "state of",
-    "curious",
-    "orbit",
-    "flow of",
-    "battling",
-    "dominance",
-    "it's natural",
-    "natural to feel",
-    "immense",
-    "sheer",
-    "vast",
-    "elusive",
-    "undeniable",
-    "discrepancy",
-    "underlying",
-    "apparent",
-    "surface",
-    "have you noticed",
-    "do you notice",
-    "can you",
-    "have you",
-
-]
-
-
-def needs_repair(text: str) -> bool:
-    lower = text.lower()
-    return any(p in lower for p in FORBIDDEN_PATTERNS)
-def repair_response(llm, original_response: str, user_input: str, memory: str) -> str:
-    repair_prompt = f"""
-You are revising a response to match a therapist-like conversational posture.
-
-Goal:
-Make the response restrained, grounded, and present.
-
-Rules (strict):
-- Remove all reassurance, normalization, validation clichés, and directives
-- Remove questions of any kind
-- Remove explanations, causes, or interpretations
-- Remove metaphors, imagery, and abstract language
-- Do NOT add comfort, encouragement, or insight
-
-Rewrite style:
-- Use plain, concrete, everyday wording
-- Describe what is happening in the user’s inner experience
-- Stay close to the moment being described
-- Sound steady and human, not insightful or polished
-
-Constraints:
-- 4-6 sentences maximum
-- No advice
-- No questions
-- No psychology language
-If a sentence sounds like it could appear in an article, rewrite it more simply.
-
-Return ONLY the revised response.
-
-
-Original response:
-"{original_response}"
-
-User message:
-"{user_input}"
-
-Context memory:
-{memory}
-
-Rules for revision:
-- Remove advice, reassurance, and questions
-- You may rephrase or deepen the reflection
-- Do not introduce advice, reassurance, or questions
-- Do not add explanations
-- Keep the focus on the user's internal experience
-- Keep it natural and human
-- Do not sound generic
-- Usually 2–4 sentences
-- More if it helps the conversation feel shared, not one-sided
-“It is allowed to acknowledge the emotional weight or effort involved, without reassuring or fixing.”
-
-Return ONLY the revised response.
-"""
-    return llm.generate(repair_prompt).strip()
-
-def choose_intention(state):
-    if state.persistence == "stuck":
-        return "containment"      # slow, steady, grounding
-    if state.self_frustration == "high":
-        return "validation"       # acknowledge weight, self-criticism
-    if state.emotional_load == "heavy":
-        return "grounding"        # steady, simplify
-    if state.persistence == "repeating":
-        return "linking"          # connect to pattern gently
-    return "naming"               # put words to something fuzzy
-
-
-def advance_phase(state, memory, phase):
+    # LISTENING → REFLECTING
+    # Trigger when the same internal process appears more than once
     if phase == Phase.LISTENING:
-        if state.persistence == "repeating":
+        if memory.has_repeated_pattern():
             return Phase.REFLECTING
 
+    # REFLECTING → CLARIFYING
+    # Trigger when repetition is clear and starting to feel burdensome
     if phase == Phase.REFLECTING:
-        if len(memory.patterns) >= 2:
+        if state.persistence == "stuck" and state.self_frustration == "high":
+            return Phase.GUIDING
+        if state.persistence == "repeating":
             return Phase.CLARIFYING
 
+    # CLARIFYING → ORIENTING
+    # Trigger when duration or entrenchment appears
     if phase == Phase.CLARIFYING:
         if (
-            state.turn_count >= 6
-            and state.is_stable()
-            and any(w in state.raw_text for w in ["months", "long time", "for a while"])
+            state.turn_count >= 4
+            or state.persistence == "stuck"
         ):
             return Phase.ORIENTING
 
-
+    # ORIENTING → GUIDING
+    # Trigger only on explicit readiness
+    # ORIENTING → GUIDING
     if phase == Phase.ORIENTING:
-        if getattr(state, "user_requested_guidance", False):
+        if state.persistence == "stuck" and state.self_frustration == "high":
             return Phase.GUIDING
 
+
     return phase
+
+
+
+# --------------------------------------------------
+# Main response function
+# --------------------------------------------------
+
+def respond(user_text: str, debug: bool = False) -> str:
+    global current_phase
+    # --- SIGNAL EXTRACTION (NEW) ---
+    detected_patterns = signal_extractor.detect_patterns(user_text)
+    pattern_memory.update(detected_patterns)
+
+    # -----------------------------
+    # 1. Update state + pattern trackers
+    # -----------------------------
+    state_tracker.update(user_text)
+    state_tracker.update_persistence(pattern_memory)
+    # -----------------------------
+    # 2. Update rolling scenario memory (raw inputs)
+    # -----------------------------
+    scenario_memory.add_input(user_text)
+
+    # -----------------------------
+    # 3. Phase transition
+    # -----------------------------
+    prev_phase = current_phase
+    current_phase = advance_phase(state_tracker, memory, current_phase)
+
+    if debug:
+        print(
+            "[PHASE CHECK]",
+            "from:", prev_phase.value,
+            "to:", current_phase.value
+        )
+
+    phase_used = current_phase
+
+    # -----------------------------
+    # 4. Periodic scenario summarization (every 2 turns)
+    # -----------------------------
+    if state_tracker.turn_count % 2 == 0:
+        scenario_memory.update_summary(
+            lambda t: summarize_recent_context(t, llm_client)
+        )
+
+    # -----------------------------
+    # 5. State-based stance (early exploration)
+    # -----------------------------
+    state_stance = ""
+
+    if current_phase == Phase.LISTENING and (
+    state_tracker.persistence == "new"
+    and state_tracker.emotional_load == "light"
+    and state_tracker.self_frustration == "low"
+    ):
+        state_stance = """
+State-specific stance:
+- Treat this as early exploration, not distress
+- Stay descriptive and observational
+- Avoid reassurance or soothing language
+- Do not intensify emotional framing
+- Do not push the conversation forward
+"""
+
+    # -----------------------------
+    # 6. State-based HARD constraints (apply across all phases)
+    # -----------------------------
+    state_constraints = ""
+
+    # Heavy emotional load
+    if state_tracker.emotional_load == "heavy":
+        state_constraints += """
+- Avoid use metaphors, imagery, or poetic language
+- Prefer open-ended phrasing over conclusions
+- It is allowed to leave the response open-ended without resolving
+"""
+
+    # Stuck persistence
+    if state_tracker.persistence == "stuck":
+        state_constraints += """
+- Avoid repeating the same reflection verbatim
+- Gently shift toward orientation rather than looping
+"""
+
+    # High self-frustration (NON-NEGOTIABLE continuation)
+    if state_tracker.self_frustration == "high":
+        state_constraints += """
+- It is allowed to acknowledge frustration or self-criticism plainly
+- Do NOT minimize, dismiss, or fix the experience
+- Do NOT offer advice or solutions
+"""
+
+    # -----------------------------
+    # 7. Fetch scenario summary (rolling context)
+    # -----------------------------
+    past_scenarios = scenario_memory.get()
+
+    scenario_block = ""
+    if past_scenarios:
+        scenario_block = (
+            "Recent ongoing context to stay consistent with:\n- "
+            + "\n- ".join(past_scenarios)
+            + "\n\nUse this to maintain continuity and depth, without over-analyzing it."
+        )
+
+    # -----------------------------
+    # 8. Intention + policy selection
+    # -----------------------------
+    intention = choose_intention_from_phase(current_phase, state_tracker)
+
+    phase_rule = PHASE_RULES[current_phase.name]
+    intention_rule = INTENTION_RULES[intention]
+    policy = get_response_policy(state_tracker, current_phase)
+    # Allow longer responses once context exists
+    if scenario_memory.get():
+        policy["allow_extension"] = True
+    if len(scenario_memory.get()) >= 3:
+        policy["momentum"] = Momentum.OPEN
+
+
+    active_pattern = memory.get_active_pattern()
+    phase_prompt = PHASE_PROMPTS[current_phase.name]
+        # -----------------------------
+    # 8.5 Topic enforcement (NEW)
+    # -----------------------------
+    topic = state_tracker.context_anchor
+
+    topic_block = ""
+    if topic:
+        topic_block = f"""
+Conversation topic (do not drift):
+- {topic}
+
+All responses in this phase must stay grounded in this topic.
+If the user asks a general or abstract question, interpret it
+through this topic unless the user explicitly shifts focus.
+"""
+
+    # -----------------------------
+    # 9. Build final prompt
+    # -----------------------------
+    guidance_integration_block = ""
+
+    if current_phase == Phase.GUIDING:
+        guidance_integration_block = """
+    Before offering guidance:
+    - Briefly integrate the key pattern and the recent ongoing context
+    - This integration should be 1–2 sentences
+    - It should reflect what has been most persistent or heavy
+    - Do not add new information
+    """
+
+    prompt = f"""
+{SYSTEM_PROMPT}
+
+Current phase:
+{phase_used.value}
+
+
+Stay close to this experience and avoid drifting into general explanations.
+
+{guidance_integration_block}
+
+The following phase stance OVERRIDES default conversational behavior:
+{phase_prompt}
+
+Cadence:
+- It is allowed to develop a thought across multiple sentences.
+- Do not resolve or conclude the experience prematurely.
+
+User:
+{user_text}
+"""
+
+
+    # -----------------------------
+    # 10. Generate response
+    # -----------------------------
+    response = llm_client.generate(prompt).strip()
+
+    # -----------------------------
+    # 11. Update pattern memory with full turn
+    # -----------------------------
+    memory.update(user_text, response)
+    state_tracker.update_persistence(memory)
+        # ---- Debug ----
+    if debug:
+        print("\n[DEBUG]")
+        print("PHASE:", phase_used.name)
+        print("INTENTION:", intention)
+        print("[DEBUG SIGNALS]", detected_patterns)
+        print("[DEBUG PATTERN COUNTS]", pattern_memory.pattern_counts)
+        print("ACTIVE PATTERN:", active_pattern)
+        print(f"Scenario summary: {scenario_memory.get()}")
+        print(state_tracker.get_state())
+        print()
+    return response
+
+def summarize_recent_context(text: str, llm):
+    prompt = f"""
+Summarize the following recent user messages into ONE sentence.
+Rules:
+- Use first-person implied framing (e.g., “they describe…” is NOT allowed)
+- No clinical or diagnostic language
+- Describe experience as lived, not observed
+- Focus on continuity over time
+- Do NOT use third-person observer framing
+- Write as if the experience is being described from inside
+
+
+Text:
+{text}
+
+Return only the summary sentence.
+"""
+    return llm.generate(prompt).strip()
+
+
+
+# from enum import Enum
+
+# from llm_client import LLMClient
+# from state_tracker import StateTracker
+# from response_policy import get_response_policy
+# from phase_rules import PHASE_RULES
+# from intention_rules import INTENTION_RULES
+# from scenario_memory import ScenarioMemory
+# from phase_prompts import PHASE_PROMPTS
+# from signal_extractor import SignalExtractor
+# from memory import PatternMemory
+
+
+# # --------------------------------------------------
+# # Phase definition
+# # --------------------------------------------------
+
+# class Phase(Enum):
+#     LISTENING = "listening"
+#     REFLECTING = "reflecting"
+#     CLARIFYING = "clarifying"
+#     ORIENTING = "orienting"
+#     GUIDING = "guiding"
+
+
+# PHASE_MAX_TOKENS = {
+#     Phase.LISTENING: 300,
+#     Phase.REFLECTING: 350,
+#     Phase.CLARIFYING: 400,
+#     Phase.ORIENTING: 500,
+#     Phase.GUIDING: 800,
+# }
+
+
+# # --------------------------------------------------
+# # Single-session state (SINGLE SOURCE OF TRUTH)
+# # --------------------------------------------------
+
+# state_tracker = StateTracker()
+# scenario_memory = ScenarioMemory()
+# pattern_memory = PatternMemory()
+# signal_extractor = SignalExtractor()
+# llm_client = LLMClient()
+
+# current_phase = Phase.LISTENING
+# phase_turns = 0
+
+
+# # --------------------------------------------------
+# # SYSTEM PROMPT (STATIC ONLY)
+# # --------------------------------------------------
+
+# SYSTEM_PROMPT = """
+# You are a therapist-like conversational presence.
+# Stay with lived experience. Do not explain, diagnose, or instruct.
+# Avoid reassurance and normalization.
+# Use plain, concrete language.
+# End with one gentle continuation question.
+
+# When persistence is "stuck":
+# - Prefer noticing statements over questions
+# - Questions should invite grounding or narrowing, not exploration
+# """
+
+
+# # --------------------------------------------------
+# # Intention logic
+# # --------------------------------------------------
+
+# def choose_intention(phase: Phase) -> str:
+#     return {
+#         Phase.LISTENING: "naming",
+#         Phase.REFLECTING: "linking",
+#         Phase.CLARIFYING: "clarifying",
+#         Phase.ORIENTING: "orienting",
+#         Phase.GUIDING: "guiding",
+#     }[phase]
+
+
+# # --------------------------------------------------
+# # Phase progression (STRICT + SAFE)
+# # --------------------------------------------------
+
+# def advance_phase(state: StateTracker, memory: PatternMemory):
+#     global current_phase, phase_turns
+
+#     next_phase = current_phase
+
+#     if current_phase == Phase.LISTENING:
+#         if memory.has_repeated_pattern():
+#             next_phase = Phase.REFLECTING
+
+#     elif current_phase == Phase.REFLECTING:
+#         if state.persistence in ("repeating", "stuck"):
+#             next_phase = Phase.CLARIFYING
+
+#     elif current_phase == Phase.CLARIFYING:
+#         if phase_turns >= 2:
+#             next_phase = Phase.ORIENTING
+
+#     elif current_phase == Phase.ORIENTING:
+#         if (
+#             state.user_requested_guidance
+#             or (
+#                 state.persistence == "stuck"
+#                 and memory.get_active_pattern()
+#                 and memory.pattern_counts.get(memory.get_active_pattern(), 0) >= 3
+#                 and state.emotional_load != "heavy"
+#             )
+#         ):
+#             next_phase = Phase.GUIDING
+
+#     if next_phase != current_phase:
+#         phase_turns = 0
+#         return next_phase
+
+#     return current_phase
+
+
+# # --------------------------------------------------
+# # Main response loop
+# # --------------------------------------------------
+
+# def respond(user_text: str, debug: bool = False) -> str:
+#     global current_phase, phase_turns
+
+#     # 1. Detect patterns
+#     detected_patterns = signal_extractor.detect_patterns(user_text)
+#     pattern_memory.update(detected_patterns)
+
+#     # 2. Update state
+#     state_tracker.update(user_text)
+#     state_tracker.update_persistence(pattern_memory)
+
+#     # 3. Scenario memory
+#     scenario_memory.add_input(user_text)
+#     if state_tracker.turn_count % 2 == 0:
+#         scenario_memory.update_summary(
+#             lambda t: summarize_recent_context(t, llm_client)
+#         )
+
+#     # 4. Phase transition
+#     prev_phase = current_phase
+#     current_phase = advance_phase(state_tracker, pattern_memory)
+#     phase_turns += 1
+
+#     # 5. Intention & policy
+#     intention = choose_intention(current_phase)
+#     policy = get_response_policy(state_tracker, current_phase)
+
+#     # 6. Prompt assembly
+#     scenario_block = ""
+#     if scenario_memory.get():
+#         scenario_block = "Recent context:\n- " + "\n- ".join(scenario_memory.get())
+
+#     persistence_block = f"""
+# Interaction continuity:
+# - Persistence level: {state_tracker.persistence}
+# """
+
+#     prompt = f"""
+# {SYSTEM_PROMPT}
+# {persistence_block}
+
+# Current phase: {current_phase.value}
+# Phase stance:
+# {PHASE_PROMPTS[current_phase.name]}
+
+# Active pattern:
+# {pattern_memory.get_active_pattern()}
+
+# {scenario_block}
+
+# User:
+# {user_text}
+# """
+
+#     # 7. Generate
+#     max_tokens = PHASE_MAX_TOKENS[current_phase]
+#     response = llm_client.generate(prompt, max_tokens=max_tokens).strip()
+
+#     # 8. DEBUG OUTPUT
+#     if debug:
+#         print("\n===== DEBUG STATE =====")
+#         print("USER TEXT:", user_text)
+#         print("PHASE:", prev_phase.value, "→", current_phase.value)
+#         print("PHASE TURNS:", phase_turns)
+#         print("INTENTION:", intention)
+#         print("PERSISTENCE:", state_tracker.persistence)
+#         print("EMOTIONAL LOAD:", state_tracker.emotional_load)
+#         print("SELF FRUSTRATION:", state_tracker.self_frustration)
+#         print("USER ASKED GUIDANCE:", state_tracker.user_requested_guidance)
+#         print("DETECTED PATTERNS:", detected_patterns)
+#         print("PATTERN COUNTS:", pattern_memory.pattern_counts)
+#         print("ACTIVE PATTERN:", pattern_memory.get_active_pattern())
+#         print("SCENARIO MEMORY:", scenario_memory.get())
+#         print("POLICY:", policy)
+#         print("MAX TOKENS:", max_tokens)
+#         print("=======================\n")
+
+#     return response
+
+
+# # --------------------------------------------------
+# # Summarization helper
+# # --------------------------------------------------
+
+# def summarize_recent_context(text: str, llm):
+#     prompt = f"""
+# Summarize the following user experience into ONE sentence.
+# No diagnosis. No explanation. First-person implied.
+
+# Text:
+# {text}
+# """
+#     return llm.generate(prompt, max_tokens=120).strip()
