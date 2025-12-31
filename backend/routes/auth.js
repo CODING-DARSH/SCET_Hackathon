@@ -87,14 +87,13 @@ router.post("/login-password", async (req, res) => {
 
     const user = result.rows[0];
 
-    if (!user.password) {
+    if (!user.password_hash) {
       return res.status(500).json({
         message: "User password not set"
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-
+    const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({
         message: "Invalid password"
@@ -156,5 +155,32 @@ router.post("/verify-login-otp", async (req, res) => {
     message: "Login successful"
   });
 });
+/* ============ GET USER PROFILE (BY EMAIL) ============ */
+router.get("/me", async (req, res) => {
+  try {
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const result = await pool.query(
+      `SELECT user_id, full_name, email FROM users WHERE email = $1`,
+      [email]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    console.error("Profile fetch error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 
 module.exports = router;
