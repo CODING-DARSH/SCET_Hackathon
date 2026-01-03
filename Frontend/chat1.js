@@ -2,6 +2,7 @@
 const API_BASE = "http://localhost:5000";
 const userId = localStorage.getItem("user_id");
 
+
 /* ================= STATE ================= */
 let currentSessionId = null;
 let welcomeShown = false;
